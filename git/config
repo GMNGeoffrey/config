@@ -18,6 +18,7 @@
 	prunelocal = "!f() { \\\n git branch -r | awk '{print $1}' | egrep -v -f /dev/fd/0 <(git branch -vv | grep origin) | awk '{print $1}' | xargs git branch -D; \\\n}; f"
 	ch = "!f() { \\\n git checkout \"$@\"; git submodule sync && git submodule update --init; \\\n}; f"
 	reword = commit --amend --only
+	logg = log --graph --oneline
 [checkout]
 	defaultRemote = origin
 [pull]
