@@ -1,5 +1,7 @@
 [user]
 	name = Geoffrey Martin-Noble
+[init]
+	defaultBranch = main
 [submodule]
 	recurse = false
 	fetchJobs = 8
