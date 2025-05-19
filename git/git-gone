@@ -1,0 +1,123 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Delete local branches whose head commit is the same as that of a PR that has
+# been merged.
+
+DRY_RUN=0
+DEBUG=0
+REPO=""
+
+function usage() {
+    echo "usage: git gone [-n|--dry-run|--dry_run] [--debug] [-R|--repo [HOST/]OWNER/REPO]" >&2
+    exit 1
+}
+
+while (( "$#" )); do
+    case "$1" in
+        -n|--dry-run)
+            DRY_RUN=1
+            shift 1
+            ;;
+        --debug)
+            DEBUG=1
+            shift 1
+            ;;
+        -R|--repo)
+            shift 1
+            REPO=$1
+            shift 1
+            ;;
+        *)
+            echo "Unsupported argument $1" >&2
+            usage
+            ;;
+    esac
+done
+
+if (( DEBUG == 1 )); then
+    set -x
+fi
+
+function main() {
+    if (( DRY_RUN != 0 )); then
+        echo "DRY RUN: only printing actions that would be taken"
+    fi
+
+    readarray -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/)
+    local -a gh_branch_filter=("${branches[@]/#/head:}")
+
+    local -a gh_args=(
+        --limit=1000
+        --state=merged
+        --author="@me"
+        # We filter to only PRs with head branches matching our local branches,
+        # except that the gh CLI uses the search endpoint here, which does a
+        # prefix match for branch names
+        # (https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests#search-by-branch-name),
+        # so we still have to filter client side with jq (using the `--head`
+        # flag only allows a single input, so that doesn't work either)
+        --search="${gh_branch_filter[*]}"
+        --json='headRefOid'
+        --json='headRefName'
+        --json='number'
+        --json='url'
+    )
+
+    if [[ -n "${REPO}" ]]; then
+        gh_args+=(--repo="${REPO}")
+    fi
+
+    # As noted above, we have to do client-side filtering for branch name, then
+    # we group by the branch name, since multiple PRs could've used the same
+    # branch name, and break out the json arrays for each branch name into
+    # separate entries in a bash array.
+    readarray -t json_prs_by_branch < <(\
+        gh pr list "${gh_args[@]}" \
+        | jq -c '. | map(select([.headRefName] | inside($ARGS.positional))) | group_by(.headRefName)[]' \
+            --args "${branches[@]}"
+    )
+
+    if (( ${#json_prs_by_branch[@]} == 0 )); then
+        echo "Found no matching PRs for local branches"
+    fi
+
+    for json_branch_prs in "${json_prs_by_branch[@]}"; do
+        branch="$(jq -r '.[0].headRefName' <<< "${json_branch_prs}")"
+        local_head_commit="$(git rev-parse "${branch}")"
+        merged=0
+
+        readarray -t json_prs < <(jq -c 'sort_by(.number) | .[]' <<< "${json_branch_prs}")
+        for json_pr in "${json_prs[@]}"; do
+            pr_head_commit="$(jq -r '.headRefOid' <<< "${json_pr}")"
+            pr_number="$(jq -r '.number' <<< "${json_pr}")"
+            pr_url="$(jq -r '.url' <<< "${json_pr}")"
+
+            if [[ "${pr_head_commit}" == "${local_head_commit}" ]]; then
+                merged=1
+                break
+            fi
+        done
+        if (( merged==1 )); then
+            # No newline so the git output is on the same line
+            echo -n "Deleting branch '${branch}' for merged PR #${pr_number} (${pr_url}): "
+            if (( DRY_RUN == 0 )); then
+                git branch -D ${branch}
+            else
+                # Since we didn't do a newline above, we need to add one if we don't actually run the git command above
+                echo ''
+            fi
+        else
+            echo "Not deleting '${branch}'. No matching PRs have a matching head commit ${local_head_commit}. Found matching PRs:"
+            for json_pr in "${json_prs[@]}"; do
+                pr_head_commit="$(jq -r '.headRefOid' <<< "${json_pr}")"
+                pr_number="$(jq -r '.number' <<< "${json_pr}")"
+                pr_url="$(jq -r '.url' <<< "${json_pr}")"
+                echo "    #${pr_number} (${pr_url}): ${pr_head_commit}"
+            done
+        fi
+    done
+}
+
+main

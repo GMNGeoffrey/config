@@ -1,0 +1,41 @@
+[user]
+	name = Geoffrey Martin-Noble
+[submodule]
+	recurse = false
+	fetchJobs = 8
+[push]
+	default = current
+[alias]
+	fake-merge  = "!f(){ \\\ngit reset --soft $(git log --format=%B -n 1 | git commit-tree HEAD^{tree} -p HEAD^ -p $1); \\\n}; f"
+	br = for-each-ref --sort=committerdate refs/heads/ --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) - %(color:red)%(objectname:short)%(color:reset) - %(contents:subject) (%(color:green)%(committerdate:relative)%(color:reset))'
+	amend = commit -a --amend --no-edit
+	co = "!f(){ \\\ngit checkout ${1?} && git submodule update; \\\n}; f"
+	# `git git foo` -> `git foo` typo fixer
+	git = "!f(){ \\\n git \"$@\"; \\\n}; f"
+	root = rev-parse --show-toplevel
+	prunelocal = "!f() { \\\n git branch -r | awk '{print $1}' | egrep -v -f /dev/fd/0 <(git branch -vv | grep origin) | awk '{print $1}' | xargs git branch -D; \\\n}; f"
+	ch = "!f() { \\\n git checkout \"$@\"; git submodule sync && git submodule update --init; \\\n}; f"
+	reword = commit --amend --only
+[checkout]
+	defaultRemote = origin
+[pull]
+	ff = only
+[remote]
+	pushDefault = origin
+[diff]
+	# Remove annoying a/ b/ prefixes from filenames in diff
+	noprefix = true
+	wsErrorHighlight = all
+[url "ssh://git@github.com/"]
+	pushInsteadOf = https://github.com/
+# it turns out to be really annoying to sign everything if using passkey-based
+# signing key  (yubikey, touchid, etc). Maybe should turn on a pre-push check or
+# something to recommit and sign or keep the key unlocked for longer.
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	allowedSignersFile = /home/gcmn/.ssh/allowed_signers

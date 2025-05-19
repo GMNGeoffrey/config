@@ -1,0 +1,66 @@
+#!/bin/bash
+
+set -u
+
+WATCHED_COMMAND=$1
+shift
+declare -a WATCHED_ARGS=("$@")
+
+function check_exists() {
+  if ! type "$1" > /dev/null 2>&1; then
+    echo "$1 command not found. Is it installed?"
+    exit 1
+  fi
+}
+
+check_exists git
+check_exists inotifywait
+
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+
+if (( "$?" != 0 )); then
+  echo "Failed to find git root. Are you in a git directory?"
+  exit 1
+fi
+
+function watched_command() {
+  (set -x; ${WATCHED_COMMAND} "${WATCHED_ARGS[@]}")
+  echo "...completed with exit code $?"
+}
+
+echo "Running initial command before establishing watches."
+watched_command &
+PID="$!"
+
+declare -a inotify_command=(
+  inotifywait
+  # inotifywait will output info about setting up watches, but we don't actually
+  # wait for it to finish set up before running our first command. I couldn't
+  # find a good way to do so and the command we run may stomp on the
+  # "Watches established" message, so we avoid outputtting the message at all.
+  --quiet
+  --event=modify,move,create,delete,attrib
+  --monitor
+  --recursive
+  # Output the full filepath, watched directory + filename
+  --format="%w%f"
+  # Watch everything under the git root
+  "${GIT_ROOT?}"
+  # Except the .git directory (this is not gitignored)
+  "@${GIT_ROOT?}/.git"
+)
+
+while read -r filepath; do
+  if ! git check-ignore -q "${filepath?}"; then
+    kill "${PID?}" > /dev/null 2>&1
+    # Wait for the process to actually exit.
+    # Technically this can hang forever if the process doesn't respond properly
+    # to SIGTERM. Hopefully the user will just Ctrl+C at that point. Suggestions
+    # for how to add a deadline to this welcome. `timeout wait` doesn't work
+    # since wait is a shell builtin.
+    wait "${PID?}"
+    printf "\n\nWatched file ${filepath} changed. Restarting\n\n"
+    watched_command &
+    PID="$!"
+  fi
+done < <("${inotify_command[@]}")

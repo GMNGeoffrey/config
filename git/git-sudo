@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Protect yourself from accidentally pushing upstream. Leave the
+# upstream push URL as a fake DISABLE. Then temporarily enable pushes
+# when you do need them with this custom git subcommand. Run:
+# `git sudo [command]` to run the `command` but with pushing to
+# upstream enabled, e.g. `git sudo push upstream main`
+
+git remote set-url --delete --push upstream DISABLE
+git "$@"
+git remote set-url upstream --push DISABLE
