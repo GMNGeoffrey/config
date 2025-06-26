@@ -31,9 +31,10 @@
 	wsErrorHighlight = all
 [url "ssh://git@github.com/"]
 	pushInsteadOf = https://github.com/
-# it turns out to be really annoying to sign everything if using passkey-based
-# signing key  (yubikey, touchid, etc). Maybe should turn on a pre-push check or
-# something to recommit and sign or keep the key unlocked for longer.
+# it turns out to be really annoying to sign everything if using a signing key
+# that requires user touch (yubikey, touchid, etc). Maybe should turn on a
+# pre-push check or something to recommit and sign or keep the key unlocked for
+# longer?
 [commit]
 	gpgsign = true
 [tag]
@@ -42,3 +43,5 @@
 	format = ssh
 [gpg "ssh"]
 	allowedSignersFile = /home/gcmn/.ssh/allowed_signers
+	# This format requires git 2.35 (https://github.com/git/git/commit/350a2518c8ea4f42934b4d6f3466d2815efff97f)
+	defaultKeyCommand = sh -c 'echo key::$(ssh-add -L)'
